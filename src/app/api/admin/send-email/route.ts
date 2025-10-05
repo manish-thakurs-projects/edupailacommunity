@@ -70,21 +70,35 @@ export async function POST(request: NextRequest) {
       console.log(`[admin/send-email] Using ${recipients.length} recipients from request`);
     }
 
+    // Build a name map for personalization (email -> name)
+    const usersFound = await User.find({ email: { $in: recipients } }, 'email name').lean();
+    const nameMap = new Map<string, string>();
+    usersFound.forEach((u: any) => {
+      if (u && u.email) nameMap.set(String(u.email).toLowerCase(), (u.name || '').trim());
+    });
+
     if (recipients.length === 0) {
       console.warn('[admin/send-email] No recipients found — aborting');
       return NextResponse.json({ error: 'No recipients to send to' }, { status: 400 });
     }
-
+    
     // Create email record
+    // Save only filenames (or URLs) in DB to match Email model validation (often expects [String]).
+    const attachmentNames = (attachments || []).map((a: any) => {
+      if (!a) return '';
+      return a.name || a.filename || (typeof a === 'string' ? a : '');
+    }).filter(Boolean);
+
     const emailRecord = new Email({
       subject,
       content,
-      attachments: attachments || [],
+      attachments: attachmentNames,
       videoLinks: videoLinks || [],
       recipients,
       sentBy: (admin && ((admin as any).username || (admin as any).adminId)) || process.env.ADMIN_USERNAME
     });
-
+    console.log('[admin/send-email] attachments saved to DB:', attachmentNames);
+    
     await emailRecord.save();
     console.log('[admin/send-email] Email record saved:', emailRecord._id);
 
@@ -154,18 +168,22 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // pick name from DB map or fallback to local-part of email
+        const recipientEmailKey = String(to).toLowerCase();
+        const recipientName = nameMap.get(recipientEmailKey) || recipientEmailKey.split('@')[0];
+
         const mailOptions: any = {
           from: smtpUser,
           to,
           subject,
-          html: generateEmailTemplate(content, videoLinks || [], attachments || []),
+          html: generateEmailTemplate(content, videoLinks || [], attachments || [], recipientName),
         };
 
         if (normalizeAttachments.length > 0) {
           mailOptions.attachments = normalizeAttachments;
         }
 
-        console.log(`[admin/send-email] Sending to: ${to}`);
+        console.log(`[admin/send-email] Sending to: ${to} (name: ${recipientName})`);
         const info = await transporter.sendMail(mailOptions);
         console.log(`[admin/send-email] Sent to ${to}: messageId=${info.messageId || info.response}`);
         results.push({ to, success: true, info });
@@ -189,224 +207,227 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}function generateEmailTemplate(content: string, videoLinks: string[], attachments: any[] = [], recipientName = 'there') {
+  // HTML escape function for security
+  const escapeHtml = (str = '') =>
+    String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
 
-function generateEmailTemplate(content: string, videoLinks: string[], attachments: string[]) {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Email</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-        
-        body {
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          line-height: 1.6;
-          color: #000000;
-          background-color: #ffffff;
-          -webkit-font-smoothing: antialiased;
-          -moz-osx-font-smoothing: grayscale;
-        }
-        
-        .email-container {
-          max-width: 600px;
-          margin: 0 auto;
-          background: #ffffff;
-        }
-        
-        .email-header {
-          border-bottom: 2px solid #000000;
-          padding: 32px 40px 24px;
-          text-align: left;
-        }
-        
-        .email-logo {
-          font-size: 24px;
-          font-weight: 700;
-          letter-spacing: -0.5px;
-          color: #000000;
-          text-decoration: none;
-        }
-        
-        .email-content {
-          padding: 40px;
-        }
-        
-        .email-body {
-          font-size: 16px;
-          line-height: 1.7;
-          color: #000000;
-          margin-bottom: 32px;
-        }
-        
-        .email-body p {
-          margin-bottom: 20px;
-        }
-        
-        .media-section {
-          margin: 32px 0;
-          padding: 0;
-        }
-        
-        .section-title {
-          font-size: 14px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          margin-bottom: 16px;
-          color: #000000;
-          border-bottom: 1px solid #e5e5e5;
-          padding-bottom: 8px;
-        }
-        
-        .video-grid {
-          display: grid;
-          gap: 12px;
-          margin-top: 16px;
-        }
-        
-        .video-link {
-          display: block;
-          padding: 16px;
-          border: 1px solid #e5e5e5;
-          text-decoration: none;
-          color: #000000;
-          transition: all 0.2s ease;
-          font-size: 14px;
-          font-weight: 500;
-        }
-        
-        .video-link:hover {
-          border-color: #000000;
-          background-color: #f8f8f8;
-        }
-        
-        .video-link::before {
-          content: "▶";
-          margin-right: 12px;
-          font-size: 12px;
-          color: #000000;
-        }
-        
-        .attachments-grid {
-          display: grid;
-          gap: 12px;
-          margin-top: 16px;
-        }
-        
-        .attachment-item {
-          display: flex;
-          align-items: center;
-          padding: 16px;
-          border: 1px solid #e5e5e5;
-          font-size: 14px;
-          color: #000000;
-        }
-        
-        .attachment-item::before {
-          content: "📎";
-          margin-right: 12px;
-          font-size: 14px;
-        }
-        
-        .email-footer {
-          border-top: 1px solid #e5e5e5;
-          padding: 24px 40px;
-          text-align: center;
-        }
-        
-        .footer-text {
-          font-size: 12px;
-          color: #666666;
-          line-height: 1.5;
-        }
-        
-        /* Responsive Design */
-        @media (max-width: 640px) {
-          .email-header {
-            padding: 24px 20px 16px;
-          }
-          
-          .email-content {
-            padding: 24px 20px;
-          }
-          
-          .email-body {
-            font-size: 15px;
-          }
-          
-          .email-footer {
-            padding: 20px;
-          }
-        }
-        
-        @media (max-width: 480px) {
-          .email-header {
-            padding: 20px 16px 12px;
-          }
-          
-          .email-content {
-            padding: 20px 16px;
-          }
-          
-          .video-link,
-          .attachment-item {
-            padding: 12px;
-          }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="email-container">
-        <header class="email-header">
-          <div class="email-logo">COMMUNITY</div>
-        </header>
-        
-        <main class="email-content">
-          <div class="email-body">
-            ${content.replace(/\n/g, '</p><p>')}
-          </div>
-          
-          ${videoLinks && videoLinks.length > 0 ? `
-            <div class="media-section">
-              <div class="section-title">Video Content</div>
-              <div class="video-grid">
-                ${videoLinks.map(link => `
-                  <a href="${link}" class="video-link" target="_blank">Watch Video Presentation</a>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-          
-          ${attachments && attachments.length > 0 ? `
-            <div class="media-section">
-              <div class="section-title">Attached Files</div>
-              <div class="attachments-grid">
-                ${attachments.map((file: any) => `
-                  <div class="attachment-item">${file.name}</div>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-        </main>
-        
-        <footer class="email-footer">
-          <div class="footer-text">
-            This email was sent from our community platform.<br>
-            Please do not reply to this automated message.
-          </div>
-        </footer>
+  const safeName = escapeHtml(recipientName);
+  const safeContent = escapeHtml(content).replace(/\n/g, '</p><p>');
+
+  // Attachments display
+  const attachmentDisplay = (attachments || []).map((a: any, i: number) => {
+    if (!a) return { name: `Attachment ${i + 1}`, type: '', size: null };
+    if (typeof a === 'string') return { name: a, type: '', size: null };
+    return {
+      name: a.name || a.filename || `Attachment ${i + 1}`,
+      type: a.type || (a.mime || ''),
+      size: typeof a.size === 'number' ? a.size : null,
+    };
+  });
+
+  const renderAttachmentItem = (att: any, idx: number) => {
+    const name = escapeHtml(att.name || `Attachment ${idx + 1}`);
+    const meta = [];
+    if (att.type) meta.push(escapeHtml(att.type));
+    if (att.size != null) meta.push(`${Math.round(att.size / 1024)} KB`);
+    const metaStr = meta.length ? `<div style="font-size:12px;color:#888;margin-top:2px">${meta.join(' • ')}</div>` : '';
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:8px;background:#fff;border:1px solid #222;margin-bottom:6px;">
+        <div style="font-size:20px;color:#000;">📎</div>
+        <div>
+          <div style="font-weight:600;color:#000;font-size:15px">${name}</div>
+          ${metaStr}
+        </div>
       </div>
-    </body>
-    </html>
+    `;
+  };
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edupaila Premium Update</title>
+  <style>
+    body {
+      background: #fff;
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      color: #000;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 80%;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      border: 1px solid #222;
+      overflow: hidden;
+    }
+    .header {
+      background: #000;
+      color: #fff;
+      padding: 38px 32px 24px 32px;
+      text-align: center;
+    }
+    .logo {
+      font-size: 32px;
+      margin-bottom: 8px;
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+    }
+    .tagline {
+      font-size: 16px;
+      font-weight: 500;
+      opacity: 0.85;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+    .header-divider {
+      margin: 18px auto 0 auto;
+      width: 60px;
+      height: 3px;
+      border-radius: 2px;
+      background: #fff;
+      opacity: 0.18;
+    }
+    .main {
+      padding: 38px 32px 32px 32px;
+      background: #fff;
+    }
+    .greeting {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #000;
+      letter-spacing: 0.2px;
+    }
+    .update-title {
+      font-size: 18px;
+      margin-bottom: 18px;
+      color: #000;
+    }
+    .content-body {
+      font-size: 16px;
+      line-height: 1.7;
+      color: #222;
+      margin-bottom: 28px;
+    }
+    .media-section {
+      margin: 32px 0 0 0;
+      padding: 24px 20px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #000;
+      margin-bottom: 12px;
+    }
+    .video-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .video-link {
+      display: inline-block;
+      padding: 12px 22px;
+      background: #000;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: background 0.2s;
+      border: none;
+    }
+    .video-link:hover {
+      background: #222;
+    }
+    .attachments-grid {
+      margin-top: 10px;
+    }
+    .footer {
+      background: #fff;
+      padding: 32px 24px;
+      text-align: center;
+      border-top: 1px solid #222;
+    }
+    .footer-logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: #000;
+      margin-bottom: 10px;
+    }
+    .footer-text {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 18px;
+      line-height: 1.6;
+    }
+    .footer-bottom {
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 12px;
+    }
+    @media (max-width: 650px) {
+      .container, .main, .header, .footer { padding-left: 10px; padding-right: 10px; }
+      .main { padding-top: 24px; padding-bottom: 24px; }
+      .header { padding-top: 24px; padding-bottom: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">EDUPAILA</div>
+      <div class="tagline">Premium Educational Community Platform</div>
+      <div class="header-divider"></div>
+    </div>
+    <div class="main">
+      <div class="greeting">Hello ${safeName},</div>
+      <div class="update-title">Here's an important update from our team:</div>
+      <div class="content-body">
+        <p>${safeContent}</p>
+      </div>
+      ${videoLinks && videoLinks.length > 0 ? `
+        <div class="media-section">
+          <div class="section-title">🎬 Video Resources</div>
+          <div style="font-size:14px;color:#888;margin-bottom:10px;">Access the following video content:</div>
+          <div class="video-grid">
+            ${videoLinks.map((link: string, index: number) => `
+              <a href="${escapeHtml(link)}" class="video-link" target="_blank" rel="noopener noreferrer">
+                ${videoLinks.length > 1 ? `Watch Video ${index + 1}` : 'Watch Video'}
+              </a>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+  
+    </div>
+    <div class="footer">
+      <div class="footer-logo">EDUPAILA</div>
+      <div class="footer-text">
+        This message was sent from our premium educational community platform.<br>
+        Please do not reply to this automated message.
+      </div>
+      <div class="footer-bottom">
+        &copy; ${new Date().getFullYear()} Edupaila Community. All rights reserved.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
   `;
 }

@@ -1,367 +1,387 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Lock, Send, Upload, Link, FileText, LogOut, Eye, EyeOff, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
-interface EmailData {
-  subject: string;
+type Attachment = {
+  name: string;
   content: string;
-  attachments: File[];
-  videoLinks: string[];
-  recipientEmails: string[];
-}
+  type?: string;
+  size?: number;
+  preview?: string | null;
+};
+
+// Icons (You can replace these with your preferred icon library)
+const Icons = {
+  Send: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>,
+  Logout: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>,
+  Add: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
+  Remove: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
+  Attachment: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>,
+  Video: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>,
+  Check: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
+  Error: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+};
 
 export default function AdminPanel() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [loginData, setLoginData] = useState({ username: '', password: '' });
-  const [emailData, setEmailData] = useState<EmailData>({
-    subject: '',
-    content: '',
-    attachments: [],
-    videoLinks: [''],
-    recipientEmails: []
-  });
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [adminToken, setAdminToken] = useState<string | null>(null);
+  const [subject, setSubject] = useState('');
+  const [content, setContent] = useState('');
+  const [recipients, setRecipients] = useState('');
+  const [videoLinks, setVideoLinks] = useState<string[]>([]);
+  const [videoInput, setVideoInput] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [results, setResults] = useState<any[]>([]);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('adminToken');
-    if (savedToken) {
-      setToken(savedToken);
-      setIsAuthenticated(true);
-    }
+    if (typeof window === 'undefined') return;
+    const token = localStorage.getItem('adminToken');
+    setAdminToken(token);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'adminToken') setAdminToken(e.newValue);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setMessage(null);
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (loginData.username && loginData.password) {
-        setToken('demo-token');
-        localStorage.setItem('adminToken', 'demo-token');
-        setIsAuthenticated(true);
-        setMessage({ type: 'success', text: 'Access granted' });
-      } else {
-        setMessage({ type: 'error', text: 'Invalid credentials' });
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Authentication failed' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
+  const logout = () => {
     localStorage.removeItem('adminToken');
-    setToken(null);
-    setIsAuthenticated(false);
-    setEmailData({
-      subject: '',
-      content: '',
-      attachments: [],
-      videoLinks: [''],
-      recipientEmails: []
-    });
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setEmailData(prev => ({
-      ...prev,
-      attachments: [...prev.attachments, ...files]
-    }));
-  };
-
-  const removeFile = (index: number) => {
-    setEmailData(prev => ({
-      ...prev,
-      attachments: prev.attachments.filter((_, i) => i !== index)
-    }));
+    setAdminToken(null);
+    setMessage('Logged out');
+    setResults([]);
   };
 
   const addVideoLink = () => {
-    setEmailData(prev => ({
-      ...prev,
-      videoLinks: [...prev.videoLinks, '']
-    }));
+    const link = videoInput.trim();
+    if (!link) return;
+    setVideoLinks((s) => [...s, link]);
+    setVideoInput('');
   };
 
-  const removeVideoLink = (index: number) => {
-    setEmailData(prev => ({
-      ...prev,
-      videoLinks: prev.videoLinks.filter((_, i) => i !== index)
-    }));
+  const removeVideoLink = (idx: number) => {
+    setVideoLinks((s) => s.filter((_, i) => i !== idx));
   };
 
-  const updateVideoLink = (index: number, value: string) => {
-    setEmailData(prev => ({
-      ...prev,
-      videoLinks: prev.videoLinks.map((link, i) => i === index ? value : link)
-    }));
-  };
+  const fileToBase64 = (file: File): Promise<Attachment> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('File read error'));
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        const parts = result.split(',');
+        const base64 = parts.length > 1 ? parts[1] : parts[0];
+        const preview = file.type.startsWith('image/') ? result : null;
+        resolve({
+          name: file.name,
+          content: base64,
+          type: file.type,
+          size: file.size,
+          preview,
+        });
+      };
+      reader.readAsDataURL(file);
+    });
 
-  const handleSendEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setMessage(null);
-
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      setMessage({ 
-        type: 'success', 
-        text: `Broadcast sent to all users` 
-      });
-      setEmailData({
-        subject: '',
-        content: '',
-        attachments: [],
-        videoLinks: [''],
-        recipientEmails: []
-      });
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Delivery failed' });
-    } finally {
-      setIsLoading(false);
+      const arr = Array.from(files);
+      const mapped = await Promise.all(arr.map(fileToBase64));
+      setAttachments((s) => [...s, ...mapped]);
+    } catch (err) {
+      console.error('[AdminPanel] file read error', err);
+      setMessage('Failed to read one or more files');
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-2xl p-8 border border-gray-200">
-            <div className="text-center mb-8">
-              <div className="mx-auto w-12 h-12 bg-black rounded-full flex items-center justify-center mb-4">
-                <Lock className="w-6 h-6 text-white" />
-              </div>
-              <h2 className="text-2xl font-light text-gray-900 mb-2">Admin Access</h2>
-              <p className="text-gray-500 text-sm">Enter credentials to continue</p>
-            </div>
+  const removeAttachment = (idx: number) => {
+    setAttachments((s) => s.filter((_, i) => i !== idx));
+  };
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <input
-                  type="text"
-                  value={loginData.username}
-                  onChange={(e) => setLoginData(prev => ({ ...prev, username: e.target.value }))}
-                  required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-1 focus:ring-black focus:border-black text-sm"
-                  placeholder="Username"
-                />
-              </div>
+  const sendEmails = async () => {
+    setMessage(null);
+    setResults([]);
+    if (!adminToken) {
+      setMessage('No admin token found. Login first.');
+      return;
+    }
+    if (!subject.trim() || !content.trim()) {
+      setMessage('Subject and content are required.');
+      return;
+    }
+    setSending(true);
 
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={loginData.password}
-                  onChange={(e) => setLoginData(prev => ({ ...prev, password: e.target.value }))}
-                  required
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-1 focus:ring-black focus:border-black text-sm"
-                  placeholder="Password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+    try {
+      const body: any = {
+        subject,
+        content,
+        videoLinks,
+        attachments: attachments.map((a) => ({ name: a.name, content: a.content, type: a.type })),
+      };
+      if (recipients.trim()) {
+        body.recipientEmails = recipients
+          .split(',')
+          .map((r) => r.trim())
+          .filter(Boolean);
+      }
 
-              {message && (
-                <div className={`text-sm p-3 rounded-lg border ${
-                  message.type === 'success' 
-                    ? 'bg-gray-50 border-gray-200 text-gray-800' 
-                    : 'bg-gray-50 border-gray-200 text-gray-800'
-                }`}>
-                  {message.text}
-                </div>
-              )}
+      const res = await fetch('/api/admin/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-black text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 text-sm"
-              >
-                {isLoading ? 'Authenticating...' : 'Continue'}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
+      const json = await res.json();
+      if (!res.ok && res.status !== 207) {
+        setMessage(json.error || `Send failed (${res.status})`);
+      } else {
+        setMessage(json.message || 'Emails processed');
+        if (json.results) setResults(json.results);
+      }
+    } catch (err) {
+      console.error('[AdminPanel] sendEmails error', err);
+      setMessage('Network error sending emails');
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="border-b border-gray-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div>
-              <h1 className="text-xl font-light text-gray-900">Admin Console</h1>
-              <p className="text-sm text-gray-500">Broadcast Management</p>
-            </div>
+    <div className="min-h-screen bg-white p-4 lg:p-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8 lg:mb-12">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-light text-black tracking-tight">Broadcast</h1>
+            <p className="text-gray-600 text-sm mt-1">Send emails to your audience</p>
+          </div>
+          {adminToken && (
             <button
-              onClick={handleLogout}
-              className="flex items-center text-sm text-gray-600 hover:text-gray-900"
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-black text-black hover:bg-black hover:text-white transition-all duration-200 rounded-lg"
             >
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign out
+              <Icons.Logout />
+              <span className="hidden sm:inline">Logout</span>
             </button>
-          </div>
+          )}
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <div className="mb-8">
-            <h2 className="text-2xl font-light text-gray-900 mb-2">New Broadcast</h2>
-            <p className="text-gray-500 text-sm">Send message to all registered users</p>
+        {/* Auth Status */}
+        {!adminToken && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
+            <div className="flex items-center gap-2 text-red-800">
+              <Icons.Error />
+              <span className="text-sm font-medium">Not authenticated</span>
+            </div>
+          </div>
+        )}
+
+        {/* Main Form */}
+        <div className="space-y-6">
+          {/* Subject */}
+          <div>
+            <label className="block text-sm font-medium text-black mb-2">Subject</label>
+            <input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+              placeholder="Enter email subject"
+            />
           </div>
 
-          <form onSubmit={handleSendEmail} className="space-y-6">
-            {/* Subject */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Subject
-              </label>
+          {/* Content */}
+          <div>
+            <label className="block text-sm font-medium text-black mb-2">Content</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent transition-all h-48"
+              placeholder="Compose your message..."
+            />
+          </div>
+
+          {/* Recipients */}
+          <div>
+            <label className="block text-sm font-medium text-black mb-2">
+              Recipients
+              <span className="text-gray-500 font-normal ml-1">(optional)</span>
+            </label>
+            <input
+              value={recipients}
+              onChange={(e) => setRecipients(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+              placeholder="Leave blank for all users, or enter comma-separated emails"
+            />
+          </div>
+
+          {/* Video Links */}
+          <div>
+            <label className="block text-sm font-medium text-black mb-2">Video Links</label>
+            <div className="flex gap-2 mb-3">
               <input
-                type="text"
-                value={emailData.subject}
-                onChange={(e) => setEmailData(prev => ({ ...prev, subject: e.target.value }))}
-                required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-1 focus:ring-black focus:border-black text-sm"
-                placeholder="Enter message subject"
+                value={videoInput}
+                onChange={(e) => setVideoInput(e.target.value)}
+                className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                placeholder="https://youtube.com/..."
               />
-            </div>
-
-            {/* Content */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Message
-              </label>
-              <textarea
-                value={emailData.content}
-                onChange={(e) => setEmailData(prev => ({ ...prev, content: e.target.value }))}
-                required
-                rows={6}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-1 focus:ring-black focus:border-black text-sm resize-none"
-                placeholder="Write your message here..."
-              />
-            </div>
-
-            {/* Video Links */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Media Links
-              </label>
-              {emailData.videoLinks.map((link, index) => (
-                <div key={index} className="flex items-center mb-2">
-                  <input
-                    type="url"
-                    value={link}
-                    onChange={(e) => updateVideoLink(index, e.target.value)}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-black focus:border-black text-sm"
-                    placeholder="https://"
-                  />
-                  {emailData.videoLinks.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeVideoLink(index)}
-                      className="ml-2 p-2 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
               <button
-                type="button"
                 onClick={addVideoLink}
-                className="text-sm text-gray-600 hover:text-gray-900 flex items-center"
+                className="flex items-center gap-2 px-4 py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition-all"
               >
-                <Link className="w-4 h-4 mr-2" />
-                Add link
+                <Icons.Add />
+                <span className="hidden sm:inline">Add</span>
               </button>
             </div>
-
-            {/* Attachments */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Attachments
-              </label>
-              <div className="border border-gray-300 rounded-lg p-4">
-                <div className="flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6">
-                  <div className="text-center">
-                    <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                    <input
-                      type="file"
-                      multiple
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      id="file-upload"
-                    />
-                    <label
-                      htmlFor="file-upload"
-                      className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
+            {videoLinks.length > 0 && (
+              <div className="space-y-2">
+                {videoLinks.map((v, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <Icons.Video />
+                      <a
+                        href={v}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-blue-600 truncate hover:underline"
+                      >
+                        {v}
+                      </a>
+                    </div>
+                    <button
+                      onClick={() => removeVideoLink(i)}
+                      className="p-1 hover:bg-gray-200 rounded transition-all"
                     >
-                      Select files
-                    </label>
+                      <Icons.Remove />
+                    </button>
                   </div>
-                </div>
-                
-                {emailData.attachments.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {emailData.attachments.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                        <div className="flex items-center">
-                          <FileText className="w-4 h-4 text-gray-400 mr-2" />
-                          <span className="text-sm text-gray-700">{file.name}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeFile(index)}
-                          className="text-gray-400 hover:text-gray-600"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Message Display */}
-            {message && (
-              <div className={`p-4 rounded-lg border text-sm ${
-                message.type === 'success' 
-                  ? 'bg-gray-50 border-gray-200 text-gray-800' 
-                  : 'bg-gray-50 border-gray-200 text-gray-800'
-              }`}>
-                {message.text}
+                ))}
               </div>
             )}
+          </div>
 
-            {/* Submit Button */}
+          {/* Attachments */}
+          <div>
+            <label className="block text-sm font-medium text-black mb-2">Attachments</label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-all">
+              <input
+                type="file"
+                multiple
+                onChange={(e) => handleFiles(e.target.files)}
+                className="hidden"
+                id="file-upload"
+              />
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <Icons.Attachment />
+                <p className="text-sm text-gray-600 mt-2">Click to upload files or drag and drop</p>
+                <p className="text-xs text-gray-500 mt-1">Images, PDF, DOCX, etc.</p>
+              </label>
+            </div>
+            {attachments.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {attachments.map((a, i) => (
+                  <div key={i} className="flex items-center gap-4 p-3 border border-gray-200 rounded-lg">
+                    {a.preview ? (
+                      <img
+                        src={a.preview}
+                        alt={a.name}
+                        className="w-12 h-12 object-cover rounded-lg"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-lg">
+                        <Icons.Attachment />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-black truncate">{a.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {a.type} • {((a.size ?? 0) / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => removeAttachment(i)}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-all"
+                    >
+                      <Icons.Remove />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4">
             <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-black text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center justify-center text-sm"
+              onClick={sendEmails}
+              disabled={sending || !adminToken}
+              className="flex items-center gap-2 px-6 py-3 bg-black text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all flex-1 justify-center"
             >
-              <Send className="w-4 h-4 mr-2" />
-              {isLoading ? 'Sending...' : 'Send Broadcast'}
+              <Icons.Send />
+              <span>{sending ? 'Sending...' : 'Send Broadcast'}</span>
             </button>
-          </form>
+          </div>
+
+          {/* Messages */}
+          {message && (
+            <div className={`p-4 rounded-lg border ${
+              message.includes('failed') || message.includes('error') || message.includes('Not authenticated')
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : 'bg-green-50 border-green-200 text-green-800'
+            }`}>
+              <div className="flex items-center gap-2">
+                {message.includes('failed') || message.includes('error') || message.includes('Not authenticated') ? (
+                  <Icons.Error />
+                ) : (
+                  <Icons.Check />
+                )}
+                <span className="text-sm">{message}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Results */}
+          {results.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                <h3 className="text-sm font-medium text-black">Delivery Results</h3>
+              </div>
+              <div className="max-h-60 overflow-y-auto">
+                {results.map((r, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 ${
+                      r.success ? 'bg-green-50' : 'bg-red-50'
+                    }`}
+                  >
+                    {r.success ? (
+                      <Icons.Check  />
+                    ) : (
+                      <Icons.Error  />
+                    )}
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-black">{r.to}</p>
+                      {!r.success && (
+                        <p className="text-xs text-red-600 mt-1">{r.error || 'Unknown error'}</p>
+                      )}
+                    </div>
+                    <span
+                      className={`text-xs font-medium px-2 py-1 rounded-full ${
+                        r.success
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {r.success ? 'Sent' : 'Failed'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

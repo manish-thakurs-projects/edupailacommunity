@@ -21,7 +21,7 @@ function createTransporter() {
   });
 }
 
-// Generate OTP email template
+// Generate OTP email template with black and white theme
 function generateOTPEmailTemplate(otp: string, userName: string) {
   return `
     <!DOCTYPE html>
@@ -34,83 +34,114 @@ function generateOTPEmailTemplate(otp: string, userName: string) {
         body {
           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
           line-height: 1.6;
-          color: #333;
+          color: #000000;
           max-width: 600px;
           margin: 0 auto;
           padding: 20px;
-          background-color: #f8fafc;
+          background-color: #ffffff;
         }
         .container {
           background: white;
-          border-radius: 12px;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          border-radius: 8px;
+          border: 2px solid #000000;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
           overflow: hidden;
         }
         .header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #000000;
           color: white;
           padding: 30px;
           text-align: center;
+          border-bottom: 2px solid #000000;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 600;
         }
         .content {
           padding: 30px;
         }
         .otp-code {
-          background: #f0f4f8;
-          border: 2px dashed #667eea;
-          border-radius: 8px;
-          padding: 20px;
+          background: #f8f8f8;
+          border: 2px solid #000000;
+          border-radius: 6px;
+          padding: 25px;
           text-align: center;
-          margin: 20px 0;
+          margin: 25px 0;
         }
         .otp-number {
-          font-size: 32px;
+          font-size: 36px;
           font-weight: bold;
-          color: #667eea;
-          letter-spacing: 4px;
-          margin: 10px 0;
+          color: #000000;
+          letter-spacing: 6px;
+          margin: 15px 0;
+          font-family: 'Courier New', monospace;
         }
         .footer {
-          background: #f8f9fa;
+          background: #f0f0f0;
           padding: 20px;
           text-align: center;
-          color: #666;
+          color: #333333;
           font-size: 14px;
+          border-top: 1px solid #dddddd;
         }
         .warning {
-          background: #fef3cd;
-          border: 1px solid #fecaca;
+          background: #f0f0f0;
+          border: 1px solid #000000;
           border-radius: 6px;
           padding: 15px;
           margin: 20px 0;
-          color: #92400e;
+          color: #000000;
+        }
+        .warning strong {
+          color: #000000;
+        }
+        .divider {
+          height: 1px;
+          background: #dddddd;
+          margin: 25px 0;
+        }
+        .info-text {
+          color: #666666;
+          font-size: 14px;
+          margin: 10px 0;
+        }
+        .greeting {
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 15px;
+          color: #000000;
         }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
-          <h1>📧 Email Verification</h1>
+          <h1>✉️ EMAIL VERIFICATION</h1>
         </div>
         <div class="content">
-          <h2>Hello ${userName}!</h2>
+          <div class="greeting">Hello ${userName}!</div>
           <p>Thank you for joining our community! To complete your registration, please verify your email address using the OTP code below:</p>
           
           <div class="otp-code">
-            <p><strong>Your verification code:</strong></p>
+            <p><strong>YOUR VERIFICATION CODE</strong></p>
             <div class="otp-number">${otp}</div>
-            <p><small>This code will expire in 10 minutes</small></p>
+            <p class="info-text">This code will expire in 10 minutes</p>
           </div>
+          
+          <div class="divider"></div>
           
           <div class="warning">
-            <strong>⚠️ Important:</strong> Do not share this code with anyone. Our team will never ask for your verification code.
+            <strong>⚠️ SECURITY NOTICE:</strong> Do not share this code with anyone. Our team will never ask for your verification code.
           </div>
           
-          <p>If you didn't request this verification, please ignore this email.</p>
+          <p class="info-text">If you didn't request this verification, please ignore this email.</p>
         </div>
         <div class="footer">
-          <p>This email was sent from our community platform.</p>
-          <p>If you have any questions, please contact our support team.</p>
+          <p><strong>Community Platform</strong></p>
+          <p class="info-text">This is an automated email. Please do not reply to this message.</p>
+          <p class="info-text">If you need assistance, contact our support team.</p>
         </div>
       </div>
     </body>

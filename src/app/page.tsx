@@ -184,13 +184,12 @@ export default function HomePage() {
           )}
           {activeTab === 'ask' && (
             <div className="max-w-3xl mx-auto">
-              <h1 className="text-3xl font-light text-black mb-8">Ask a Question</h1>
               <AskQuestion onQuestionPosted={handleQuestionPosted} />
             </div>
           )}
           {activeTab === 'qa' && (
             <div>
-              <h1 className="text-3xl font-light text-black mb-8">Questions & Answers</h1>
+              
               <QAList refreshTrigger={refreshTrigger} />
             </div>
           )}
